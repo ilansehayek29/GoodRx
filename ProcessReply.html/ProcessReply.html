@@ -1,0 +1,709 @@
+<html>
+    <head>
+        <title>Conversation Illustration</title>
+        <style>
+
+            div.lingo_bot div.lingo_chat_input {float: right;}
+            div.lingo_bot {border:1px gray solid; width:1000px; height:500px; overflow-y: auto}
+            div.lingo_bot label {margin-right:13px}
+            div.lingo_bot input[type="text"]:focus {outline: none}
+            div.lingo_bot input[type="radio"] {display: none}
+            div.lingo_bot .lingo_chat_box {clear:both;border:1px solid blue;border-radius: 8px; width:700px; margin:5px; padding:5px}
+            div.lingo_bot div.lingo)chat_response {float:left}
+            div.lingo_bot input[type="radio"]+label {cursor: pointer; user-select:none; border: 1px black solid; background: navy; color: white; border-radius: 5px; padding: 6px}
+            div.lingo_bot input[type="radio"]:checked+label {background: blue}
+            div.lingo_bot input[type="text"] {width:100%; border:none}
+            div.lingo_bot input[type="text"]::placeholder {font-style:italic}
+            div.lingo_bot div.chat_message {color: navy; font-weight: bold}
+            div.lingo_bot input[type="text"]:disabled {color:black}
+            
+            div.lingo_bot div.input_bar {line-height: 35px}
+            div.lingo_bot div.input_bar.single label {background: lightgrey; color: black}
+            div.lingo_bot input[type="submit"] {font-size:110%;padding:5px; margin-top:5px;font-weight: bold; cursor: pointer}
+            div.lingo_bot div.chat_form div.chat_message {font-size:110%;margin-bottom: 5px}
+            div.lingo_bot input[type="checkbox"] { margin-left:18px}
+            div.lingo_bot .lingo_loading:after {
+                content: ' .';
+                color: navy;
+                float: left;
+                font-size:200%;
+                animation: dots .3s steps(5, end) infinite;}
+
+            @keyframes dots {
+            0%, 20% {
+                color: rgba(255,255,255,0);
+                text-shadow:
+                .25em 0 0 rgba(255,255,255,0),
+                .5em 0 0 rgba(255,255,255,0);}
+            40% {
+                color: black;
+                text-shadow:
+                .25em 0 0 rgba(255,255,255,0),
+                .5em 0 0 rgba(255,255,255,0);}
+            60% {
+                text-shadow:
+                .25em 0 0 black,
+                .5em 0 0 rgba(255,255,255,0);}
+            80%, 100% {
+                text-shadow:
+                .25em 0 0 black,
+                .5em 0 0 black;}\}         
+          </style>
+    </head>
+<body>
+
+
+    <script>
+        function LingoBot(targetElement, messageProcessor) {
+
+
+            function processForm(objSubmit) {
+                return function(ev) {
+                    var isUtterance =!!objSubmit.Utterance;
+                    var str = objSubmit.Utterance || objSubmit.Navigate;
+                    var elElements = ev.target.elements;
+                    for (var i=0;i<elElements.length;i++) {
+                        var o = elElements[i];
+
+                        var key = "{" + o.name + "}";
+                        var value = isUtterance ? o.label : o.value;
+                        switch (o.type) {
+                            case "hidden":
+                                str = str.replace(key,value);
+                                break;
+                            case "radio":
+                                if (o.checked)
+                                    str = str.replace(key,value);
+                                break;
+                        }
+                    };
+            
+                    if (objSubmit.Navigate)
+                        window.open(str);
+                    if (objSubmit.Utterance) {
+                        inputBox.set(str,true);
+                    }
+
+
+                    return false;
+                }
+            }
+
+
+            
+            function processMessage(inputItem) {
+                var dom =  document.createDocumentFragment(),
+                    formContainer = document.createElement("div"),
+                    switchList = {},
+                    switchValues = {},
+                    sourceValue = {},
+                    messageDiv = document.createElement("div");
+                
+                messageDiv.className="lingo_chat_response lingo_chat_box";
+                loadingIndicator.hide();
+            
+
+                function createLine(strText,strClassName) {
+                    var div = document.createElement("div");
+                    div.innerText = strText;
+                    
+                    div.className = strClassName || "";
+                    return div;
+                }
+
+                function validateModel(name,value,owner) {
+
+                    function validateKey(item) {
+                        if (item.SwitchOn) {
+                            if (typeof(item.SwitchOn)==="string") {
+                                var target = item.Switches[switchValues[item.SwitchOn]],
+                                    testValue = switchValues[item.Name];
+                                if (!target.Values.includes(testValue)) {
+                                    switchValues[item.Name] = target.Default || target.Values[0];
+                                }
+                            }
+                        }
+                    }
+ 
+                    owner.Inputs.forEach(
+                        function (i) {
+                            if (i.Name!==name) {
+                                validateKey(i)
+                     
+                            }
+                        }
+                    )
+                }
+
+                function checkSwitch(ev) {
+                    switchValues[ev.target.name] = ev.target.type==="radio" ? ev.target.value : ev.target.checked
+                    if (switchList[ev.target.name]) {
+                        validateModel(ev.target.name, ev.target.value,ev.target.form._owner);
+
+                        prepareForms();
+                    }
+                }
+ 
+                function createButton(strType,strName, strLabel, strValue, strUtter, isChecked) {
+                    var elButton = document.createElement("input");
+                    elButton.type = strType;
+                    elButton.name = strName;
+                    elButton.value = strValue || strLabel;
+                    elButton.label = strUtter || strLabel || strValue;
+                
+                    if (strType==="Radio" || strType==="Checkbox") {
+                        var span = document.createElement("span");
+                        var label = document.createElement("label");
+                        elButton.checked = isChecked;
+                        span.appendChild(elButton);
+                        label.append(strLabel);
+                        label.htmlFor = elButton.id = "cb_" + (LingoBot.IDCounter++);
+                        span.appendChild(label);
+            
+                        elButton.onclick = checkSwitch;
+
+                        return span;
+                    } 
+                    else {
+                        return elButton;
+                    }
+                }
+
+                function createFormInputs(arrData) {
+                    var el = document.createElement("div"),
+                        formKeys = {};
+
+                    if (!arrData) return el;
+                    // ArrayToObject mapping - Needed for dependency resolution
+
+                    arrData.forEach(
+                        function (inputs) {
+                            var name = inputs.Name;
+                            formKeys[name] = inputs;
+                            if (inputs.SwitchOn) {
+                                if (typeof(inputs.SwitchOn)==="string") 
+                                    switchList[inputs.SwitchOn] = true;
+                                else
+                                    inputs.SwitchOn.forEach(function(s) {
+                                        switchList[s] = true;
+                                })
+                            }
+                  
+                        }
+                    )
+                    arrData.forEach(
+                        function (inputs) {
+                            var arr;
+                            if (inputs.Type!=="Hidden") {
+                                var elLine = createLine(inputs.Label && (inputs.Label + " : ") || "");
+                     
+                                
+                                
+                                switchValues[inputs.Name] = switchValues[inputs.Name] || inputs.Default || (obj.Form.Defaults && obj.Form.Defaults[inputs.Name]);
+
+                                if (inputs.SwitchOn) {
+                                    var key = "";
+                                    if (typeof(inputs.SwitchOn)==="string") {
+                                        key = switchValues[inputs.SwitchOn] || inputs.Default[inputs.SwitchOn];
+                                    }
+                                    else
+                                    {
+                                        inputs.SwitchOn.forEach(function(k,idx) {
+                   
+                                            key+=(switchValues[k] || (obj.Form.Defaults && obj.Form.Defaults[k])) +  (idx<inputs.SwitchOn.length-1 && "::" || "")
+                                        })
+                                    
+                                    }
+
+                                    console.log(key)
+                                    arr = inputs.Switches[key];
+                                    
+                                    
+                                    
+                                }
+                                else {
+                                    arr = inputs;
+                                }
+                            
+                                if (!arr.Values.includes(switchValues[inputs.Name])) {
+                                        switchValues[inputs.Name] = arr.Default || arr.Values[0];
+                                }
+                                elLine.className = "input_bar " + ((arr.Values.length===1) && "single" || "");
+                                
+                                arr.Values.forEach(
+                                    function (controlText, idx) {
+                                            
+                                        elLine.append(createButton(inputs.Type,inputs.Name,arr.Displays && arr.Displays[idx] || controlText,controlText,inputs.UseValues && controlText || arr.Displays && arr.Displays[idx],(switchValues[inputs.Name]===controlText)));
+                                        
+                                    }
+                                );
+                                el.append(elLine);
+                            }
+                            else
+                                el.append(createButton(inputs.Type,inputs.Name,inputs.Value, inputs.UseValues && inputs.controlText || inputs.Displays && inputs.Displays[idx]));
+
+                        }
+                    );
+                    return el;
+                }
+
+                var obj;
+                try {
+                    if (typeof(inputItem)==="string")
+                        obj = JSON.parse(strMessage);
+                    else
+                        obj = inputItem;
+                }
+                catch (ex)
+                {
+                    return createLine("Bad Input JSON String");
+                }
+
+
+                function buildForm(formObject) {
+                    var form = document.createElement("form");
+                    form._owner = formObject; // back reference - this all needs to be cleaned up and encapsulated better
+                    form.onsubmit = processForm(formObject.Submit);
+                    form.append(createFormInputs(formObject.Inputs));
+                    if (formObject.Save) {
+                        form.append(createButton("Checkbox","Save",formObject.Save));
+                    }
+                    if (formObject.Submit)
+                        form.append(createButton("Submit","Submit",formObject.Submit.Label));
+                    if (formObject.Submit.Save) {
+                        form.append(createButton("Checkbox","Save",formObject.Submit.Save));
+                    }
+                    formContainer.append(form);
+                }
+
+                function prepareForms() {
+                    formContainer.innerHTML = "";
+                    if (obj.Form) {
+                        buildForm(obj.Form);
+                    }
+                    if (obj.Forms) {
+                        obj.Forms.forEach(function(f) {buildForm(f)});
+                    }
+                }
+
+                if (obj.Message)
+                    messageDiv.appendChild(createLine(obj.Message,"chat_message"));
+                
+                if (obj.Form || obj.Forms) {
+                    
+                    messageDiv.className +=" chat_form";
+                    prepareForms()
+                    messageDiv.appendChild(formContainer);
+                }
+                dom.appendChild(messageDiv);
+                botContainer.appendChild(dom);
+                if (obj.Form || obj.Forms) {
+                    inputBox.refresh("Select from the form above or How can I help you today?");
+                }
+                else
+                    inputBox.refresh("How can I help you today?");
+
+            }
+
+            
+            var botContainer = document.createElement("div");
+            botContainer.className = "lingo_bot";
+
+            targetElement.appendChild(botContainer);
+
+            var inputBox = function(promptText, processor) {
+     
+                var chatBox, elInput;
+
+                function generate(placeholderText) {
+                    if (elInput) {
+                        freeze();
+                        
+                    }
+                    chatBox = document.createElement("div");
+                    chatBox.className = "lingo_chat_input lingo_chat_box";
+                    elInput = document.createElement("input");
+                    elInput.type="text";
+                    elInput.onchange = doChange;
+                    elInput.placeholder = placeholderText;
+                    chatBox.appendChild(elInput);
+                    botContainer.appendChild(chatBox);
+                    elInput.focus();
+                }
+                generate(promptText);
+                function doChange() {
+                    freeze();
+                    processor(elInput.value);
+                }                
+
+                function freeze() {
+                    elInput.onchange = null;
+                    elInput.disabled = true;
+
+                }
+
+                function setValue(str, process) {
+                    elInput.value = str;
+                    if (process) {
+                        freeze();
+                        processor(elInput.value);
+                    }
+                }
+
+                function refresh(promptText) {
+                    generate(promptText);
+                    loadingIndicator.hide();
+                }
+
+                return {set: setValue, refresh: refresh};
+                
+            }("Can we help with your prescription drug, doctor visit, or find information?", function(str) {
+                loadingIndicator.show();
+                if (messageProcessor) {
+                    messageProcessor(str);
+                }
+            });
+
+           
+
+            var loadingIndicator = function() {
+                var el = document.createElement("div");
+                el.className = "lingo_loading";
+
+                el.style.display = "none";
+                botContainer.appendChild(el);
+                function show() {
+                    botContainer.appendChild(el);
+                    el.style.display = "";
+                }
+
+                function hide() {
+                    el.style.display = "none";
+                }
+      
+                return {
+                    hide: hide,
+                    show: show
+                }
+            }();
+
+         
+            this.renderResponse = function(json) {
+                new processMessage(json);
+                botContainer.scrollTop = botContainer.scrollHeight - botContainer.offsetHeight;
+            }
+
+            return this;
+        }
+        LingoBot.IDCounter = 0;
+
+
+        var scriptedResponses = [
+        {
+            /* Multiple actions are defined via a message with a collection of forms */
+            Message: "How can we help you with your High Cholestorol?",
+            Forms : [
+                {
+                    Submit : {
+                        Label: "Refill Your Prescription",
+                        Utterance: "I want to refill my cholestorol prescription"
+                    }
+                },
+                {
+                    Submit : {
+                        Label: "Request a New Prescription",
+                        Utterance: "Please call the doctor to help me get a prescription for high cholestorol"
+                    }
+                },    
+                {
+                    Submit : {
+                        Label: "What is High Cholestorol?",
+                        Utterance: "Tell me more about High Cholestorol"
+                    }
+                }
+            ]
+        },
+        {
+            Message: "Let's get you the best deal!",
+            Form : {
+                Defaults: {
+                    "Override" : "Crestor",
+                    "Dosage" : "10mg",
+                    "Tablet" : "tablet"
+                },
+                Inputs : [
+                    {
+                        Type: "Hidden",
+                        Name: "Drug",
+                        Value : "Crestor"
+                    },
+                    {
+                        Type: "Radio",
+                        Label: "Describe your Refill",
+                        Name: "Override",
+                        Default: "Crestor",
+                        UseValues: true, // Use the Value, not display when generated utterance.
+                        Displays: ["Crestor (Brand)","Rosuvastatin (Generic)"],
+                        Values: ["Crestor","Rosuvastatin"]
+                    },
+                    {
+                        Label : "Dosage",
+                        Name: "Dosage",
+                        Type: "Radio",
+                        Values :["10mg","20mg","40mg","80mg"]
+                    },
+                    {
+                        Label: "Type",
+                        Name: "Tablet",
+                        Type: "Radio",
+                        Default: "tablet",
+                        Values: ["tablet"]
+                    },
+                    {
+                        Label: "Quantity",
+                        Name: "Quantity",
+                        Type: "Radio",
+                        SwitchOn: "Dosage",
+                        Switches:  
+                        {
+                                "10mg": {
+                                            Default: "30",
+                                            Displays: ["7 Tablets","15 Tablets","30 Tablets","60 Tablets","90 Tablets"],
+                                            Values: ["7","15","30","60","90"] 
+                                        },
+                                
+                                "20mg": {
+                                            Default: "30",
+                                            Displays: ["5 Tablets","30 Tablets","45 Tablets","60 Tablets","90 Tablets"],
+                                            Values: ["5","30","45","60","90"] 
+                                        },
+                                
+                                "40mg": {
+                                            Default: "30",
+                                            Displays: ["7 Tablets","15 Tablets","30 Tablets","60 Tablets","90 Tablets"],
+                                            Values: ["7","15","30","60","90"] 
+                                        },
+                                "80mg": {
+                                            Default: "30",
+                                            Displays: ["5 Tablets","30 Tablets","45 Tablets","60 Tablets","90 Tablets"],
+                                            Values: ["5","30","45","60","90"] 
+                                        }
+                        }
+
+                    }
+                ],
+                Submit : {
+                    Label: "Find Coupons",
+                    Utterance: "I want a coupon to refill my {Dosage} {Override} prescription for {Quantity}"
+                }
+            }
+            
+        },
+        {
+                    
+            Message: "We can help you fill your Crestor prescription for as little as $8.50!",
+            /* This syntax is convoluted as an illustraiton of parameterizing the URL.
+                A much simpler structure would to skip the "hidden" form and just expand the URI with the proper path */ 
+            Form : {
+                Inputs : [
+                    {
+                        Type: "Hidden",
+                        Name: "Drug",
+                        Value : "Crestor"
+                    },
+                    {
+                        Type: "Hidden",
+                        Name: "Tablet",
+                        Value : "tablet"
+                    },
+                    {
+                        Type: "Hidden",
+                        Name: "Quantity",
+                        Value : "30"
+                    },
+                    {
+                        Type: "Hidden",
+                        Name: "Dosage",
+                        Value : "5mg"
+                    },
+                    {
+                        Type: "Hidden",
+                        Name: "Override",
+                        Value: "Crestor"
+                    }
+                ],
+                Submit : {
+                    Save : "Save this prescription",
+                    Label: "Get your Crestor coupons!",
+                    Navigate: "http://www.goodrx.com/{Drug}?dosage={Dosage}&form={Tablet}&label_override={Override}&quantity={Quantity}",
+                }
+            }
+                    
+        },
+        {
+            
+            Message: "Let's get you the best deal!",
+            Form : {
+                Defaults: {
+                    "Override" : "Levaquin",
+                    "Dosage" : "500mg",
+                    "Tablet" : "tablet"
+                },
+                Inputs : [
+                    {
+                        Type: "Hidden",
+                        Name: "Drug",
+                        Value : "Levaquin",
+                        Form : "Tablet"
+                    },
+                    {
+                        Type: "Radio",
+                        Label: "Describe your Refill",
+                        Name: "Override",
+                        Default: "Levaquin",
+                        UseValues: true, // Use the Value, not display when generated utterance.
+                        Displays: ["Levaquin (Brand)","Levofloxacin (Generic)"],
+                        Values: ["Levaquin","Levofloxacin"]
+                    },
+                    {
+                        Label : "Dosage",
+                        Name: "Dosage",
+                        Type: "Radio",
+                        SwitchOn : ["Override","Tablet"],
+                        Switches: {
+                            "Levaquin::tablet" : {
+                                Values: ["500mg","750mg"]
+                            },
+                            "Levofloxacin::tablet" : {
+                                Values: ["250mg","500mg","750mg"]
+                            },
+                            "Levofloxacin::ml-of-oral-solution" : {
+                                Values: ["25mg/ml"]
+
+                            },
+                            "Levofloxacin::eye dropper" : {
+                                Values: ["5ml of 0.5%"]
+                            }
+                        }
+                    },
+                    {
+                        Label: "Type",
+                        Name: "Tablet",
+                        Type: "Radio",
+                        SwitchOn: "Override",
+                        Switches: {
+                            "Levaquin" : {
+                                Displays: ["Tablet"],
+                                Values: ["tablet"]
+                            },
+                            "Levofloxacin" : {
+                                Displays: ["tablet","ml of oral solution", "eye dropper"],
+                                Values: ["tablet","ml-of-oral-solution","eye dropper"]
+                            }
+                        }
+                    },
+                    {
+                        Label: "Quantity",
+                        Name: "Quantity",
+                        Type: "Radio",
+                        SwitchOn: ["Override","Tablet","Dosage"],
+                        Switches:  
+                        {
+                            "Levaquin::tablet::500mg": {
+                                Default: "10",
+                                Displays: ["3 Tablets","5 Tablets","7 Tablets","10 Tablets","14 Tablets"],
+                                Values: ["3","5","7","10","14"] 
+                            },
+                                
+                            "Levaquin::tablet::750mg": {
+                                Default: "10",
+                                Displays: ["5 Tablets","7 Tablets","10 Tablets","14 Tablets","19 Tablets"],
+                                Values: ["5","7","10","14","19"] 
+                            },
+                            "Levofloxacin::ml-of-oral-solution::25mg/ml": {
+                                Default: "100",
+                                Displays: ["100 ml","140 ml","150 ml","200 ml","210 ml"],
+                                Values: ["100","140","150","200","210"] 
+                            },                       
+                            "Levofloxacin::tablet::250mg": {
+                                Default: "10",
+                                Displays: ["3 Tablets","5 Tablets","7 Tablets","10 Tablets","14 Tablets"],
+                                Values: ["3","5","7","10","14"] 
+                            },
+                            "Levofloxacin::tablet::500mg": {
+                                Default: "10",
+                                Displays: ["3 Tablets","5 Tablets","7 Tablets","10 Tablets","14 Tablets"],
+                                Values: ["3","5","7","10","14"] 
+                            },                            
+                            "Levofloxacin::tablet::750mg": {
+                                Default: "10",
+                                Displays: ["3 Tablets","5 Tablets","7 Tablets","10 Tablets","14 Tablets"],
+                                Values: ["3","5","7","10","14"] 
+                            },    
+                            "Levofloxacin::eye dropper::5ml of 0.5%": {
+                                Default: "1",
+                                Displays: ["1 Eye Dropper","2 Eye Droppers","3 Eye Droppers","6 Eye Droppers"],
+                                Values: ["1","2","3","6"] 
+                            },                     
+                        }
+
+                    }
+                ],
+                Submit : {
+                    Label: "Find Coupons",
+                    Utterance: "I want a coupon to refill my {Dosage} {Override} prescription for {Quantity}"
+                }
+            }
+            
+        }
+
+        ]
+
+        var currentResponse = 0;
+
+        function nextMessage() {
+            var response;
+            if (currentResponse<scriptedResponses.length) 
+                response = scriptedResponses[currentResponse++];
+            else
+                response = {Message: "I have nothing left to say to you!"};
+            bot1.renderResponse(response);
+        }
+
+        function customProcess(str) {
+            setTimeout(nextMessage,750)
+        }
+        var bot1;
+        window.onload = function() {
+            bot1 = new LingoBot(document.body, customProcess);
+        
+        }
+
+        /*
+        for future thinking
+                        Templates : {
+                    StandardQuantity : 
+                        [ 
+                            { 
+                                Label: "Quantity",
+                                Name: "Quantity",
+                                Displays: ["7 Tablets","15 Tablets","30 Tablets","60 Tablets","90 Tablets"],
+                                Values: ["7","15","30","60","90"] 
+                            }
+                        ],
+                    AlternativeQuantity : 
+                        [   
+                            {
+                                Label: "Quantity",
+                                Name: "Quantity",
+                                Type: "Radio",
+                                Default: "30",
+                                Displays: ["5 Tablets","30 Tablets","45 Tablets","60 Tablets","90 Tablets"],
+                                Values: ["5","30","45","60","90"] 
+                            }
+                        ]
+                },*/
+    </script>
+    <h1>GoodRx HeyDoctor Concierge Illustration</h1>
+</body>
+</html>
